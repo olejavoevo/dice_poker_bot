@@ -102,7 +102,7 @@ def start_game(game_name):
 			round_info = f'Раунд {db["games"][game_name]["round_num"]}/13\n\nСписок игроков:\n'
 
 			for nickname in db['games'][game_name]['players'].values():
-				round_info += f'\n{list(db['games'][game_name]['players'].values()).index(nickname) + 1}. {nickname}'
+				round_info += f'\n{list(db["games"][game_name]["players"].values()).index(nickname) + 1}. {nickname}'
 
 			round_info += f'\n\nХод игрока {player_nickname}'
 
@@ -690,10 +690,10 @@ def get_list_of_rooms():
 def get_profile_data(user_id):
 	profile_string = f'Данные об игроке {db["users"][user_id]["nickname"]}'
 	profile_string += f'\nЗарегистрировался: {db["users"][user_id]["registered_at"]}'
-	profile_string += f'\n\nСыграно игр: {db["users"][user_id]['stats']["games"]}'
-	profile_string += f'\nИз них выиграно: {db["users"][user_id]['stats']["games_won"]}'
-	profile_string += f'\nПроцент побед: {db["users"][user_id]['stats']["win_rate"] if db["users"][user_id]['stats']["win_rate"] else "-"}'
-	profile_string += f'\n\nВсего заработано очков: {db["users"][user_id]['stats']["total_scores"]}'
+	profile_string += f'\n\nСыграно игр: {db["users"][user_id]["stats"]["games"]}'
+	profile_string += f'\nИз них выиграно: {db["users"][user_id]["stats"]["games_won"]}'
+	profile_string += f'\nПроцент побед: {db["users"][user_id]["stats"]["win_rate"] if db["users"][user_id]["stats"]["win_rate"] else "-"}'
+	profile_string += f'\n\nВсего заработано очков: {db["users"][user_id]["stats"]["total_scores"]}'
 
 	return profile_string
 
