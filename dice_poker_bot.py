@@ -7,16 +7,33 @@ import pickle
 import time
 import os
 
+'''
+TO-DO:
+[DONE] 1. Совместимость со старыми версиями Python, где внутри f-строк одинаковые
+кавычки недопустимы и приводят к ошибкам
+[DONE, REQ TESTING] 2. Логгирование в файл
+[DONE, REQ TESTING] 3. Инвайты в комнаты по нику, принятие/непринятие оных
+[DONE] 4. При пустом списке игр, в которые можно зайти, не выводить список с
+клавиатурой, а сообщить о пустом списке
+[DONE, REQ TESTING] 5. Запретить запускать игру, пока в комнате только один человек
+[DONE, REQ TESTING] 5.1 - проверять, остался ли игрок один, и завершать игру
+[PLANNED] 6. Удалять старые сообщения, так как слишком заспамлена личка ботом
+[PLANNED] 7. Отрисовывать таблицу очков и скидывать её вместе с текстом
+'''
+
+log_filename = f'dice_poker_log_{datetime.datetime.now().strftime("%d.%m.%YT%H:%M:%S")}.txt'
+
+def make_log(log, log_level):
+	with open(log_filename, 'a') as log_file:
+		log_wile.write(f'[{datetime.datetime.now().strftime("%d.%m.%YT%H:%M:%S")}] [{str(log_level).upper()}] {str(log)}')
+
 tg_bot_token = '8345402206:AAF-qV7lGoiLeee18dooVOU_ZQCSzHi5RBQ'
 
 bot = telebot.TeleBot(tg_bot_token)
 
-log_filename = f'dice_poker_log_{datetime.datetime.now().strftime("%d.%m.%YT%H:%M:%S")}.txt'
+make_log(f'Инициализирован бот при помощи токена {tg_bot_token}', 'info')
 
 admin_id = 6458256191
-
-def make_log(log):
-	pass
 
 if not os.path.exists('dump.db'):
 	db = {
@@ -36,18 +53,21 @@ if not os.path.exists('dump.db'):
 		
 	}
 
-	make_log('База данных рядом с ботом не обнаружена, создается новая')
+	make_log('База данных рядом с ботом не обнаружена, создается новая', 'info')
 
 else:
 	with open('dump.db') as f:
 		db = pickle.load(f)
 
-		make_log('Загружена база данных, последнее изменение: {db["settings"]["last_db_save"]}')
+		make_log('Загружена база данных, последнее изменение: {db["settings"]["last_db_save"]}', 'info')
 
 def db_save():
 	db['settings']['last_db_save'] = datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S')
+	make_log('База данных была сохранена!', 'database')
 
 def start_game(game_name):
+	make_log(f'Начата игра {game_name}', 'game')
+
 	for player_id in db['games'][game_name]['players'].keys():
 		db['games'][game_name]['stats'][player_id] = {
 			'sum_of_1': 0,
@@ -83,58 +103,71 @@ def start_game(game_name):
 
 	for game_round in range(rounds_count):
 		for player_id, player_nickname in db['games'][game_name]['players'].items():
-			db['games'][game_name]['hold'] = []
+			if len(list(db['games'][game_name]['players'].keys())) < 2:
+				make_log(f'Игра {game_name}, раунд {db["games"][game_name]["round_num"]}, досрочное завершение: игрок {player_id} - {player_nickname} остался единственным в комнате', 'game')
 
-			db['games'][game_name]['dices'] = {
-				'dice_a': random.randint(1,6),
-				'dice_b': random.randint(1,6),
-				'dice_c': random.randint(1,6),
-				'dice_d': random.randint(1,6),
-				'dice_e': random.randint(1,6)
-			}
+				bot.send_message(player_id,
+					'Игра досрочно завершена: ты единственный игрок в комнате!')
 
-			db['games'][game_name]['reroll_counts'] = 3
+				break
 
-			db['games'][game_name]['round_num'] = game_round + 1
+			else:
+				db['games'][game_name]['hold'] = []
 
-			db['games'][game_name]['finished_move'] = False
+				db['games'][game_name]['dices'] = {
+					'dice_a': random.randint(1,6),
+					'dice_b': random.randint(1,6),
+					'dice_c': random.randint(1,6),
+					'dice_d': random.randint(1,6),
+					'dice_e': random.randint(1,6)
+				}
 
-			round_info = f'Раунд {db["games"][game_name]["round_num"]}/13\n\nСписок игроков:\n'
+				db['games'][game_name]['reroll_counts'] = 3
 
-			for nickname in db['games'][game_name]['players'].values():
-				round_info += f'\n{list(db["games"][game_name]["players"].values()).index(nickname) + 1}. {nickname}'
+				db['games'][game_name]['round_num'] = game_round + 1
 
-			round_info += f'\n\nХод игрока {player_nickname}'
+				db['games'][game_name]['finished_move'] = False
 
-			for player in db['games'][game_name]['players'].keys():
-				if player_id != player:
-					bot.send_message(player,
-						round_info)
+				round_info = f'Раунд {db["games"][game_name]["round_num"]}/13\n\nСписок игроков:\n'
 
-			game_string = f'Ход игрока {player_nickname}'
-			game_string += f'\n\nОсталось перебросов кубиков: {db["games"][game_name]["reroll_counts"]}'
-			game_string += f'\n\nВыпавшие кубики: {db["games"][game_name]["dices"]["dice_a"]}, {db["games"][game_name]["dices"]["dice_b"]}, {db["games"][game_name]["dices"]["dice_c"]}, {db["games"][game_name]["dices"]["dice_d"]}, {db["games"][game_name]["dices"]["dice_e"]}'
-			game_string += '\nЗамороженные кубики: '
-			game_string += 'нет' if len(db['games'][game_name]['hold']) == 0 else ''
-			game_string += f'1-й ' if db["games"][game_name]["dices"]["dice_a"] in db['games'][game_name]['hold'] else ""
-			game_string += f'2-й ' if db["games"][game_name]["dices"]["dice_b"] in db['games'][game_name]['hold'] else ""
-			game_string += f'3-й ' if db["games"][game_name]["dices"]["dice_c"] in db['games'][game_name]['hold'] else ""
-			game_string += f'4-й ' if db["games"][game_name]["dices"]["dice_d"] in db['games'][game_name]['hold'] else ""
-			game_string += f'5-й ' if db["games"][game_name]["dices"]["dice_e"] in db['games'][game_name]['hold'] else ""
-			game_string += '\n\nВыбери ход кнопками клавиатуры бота!'
+				make_log(f'Игра {game_name}, раунд {db["games"][game_name]["round_num"]}, ход игрока {player_id} - {player_nickname}', 'game')
 
-			msg = bot.send_message(player_id,
-				game_string,
-				reply_markup=gen_move_player_markup(db['games'][game_name]['stats'][player_id]))
+				for nickname in db['games'][game_name]['players'].values():
+					round_info += f'\n{list(db["games"][game_name]["players"].values()).index(nickname) + 1}. {nickname}'
 
-			bot.register_next_step_handler(msg, proceed_move, game_name, player_id, player_nickname, [db["games"][game_name]["dices"]["dice_a"], db["games"][game_name]["dices"]["dice_b"], db["games"][game_name]["dices"]["dice_c"], db["games"][game_name]["dices"]["dice_d"], db["games"][game_name]["dices"]["dice_e"]])
+				round_info += f'\n\nХод игрока {player_nickname}'
 
-			while not db['games'][game_name]['finished_move']:
-				pass
+				for player in db['games'][game_name]['players'].keys():
+					if player_id != player:
+						bot.send_message(player,
+							round_info)
 
-			db_save()
+				game_string = f'Ход игрока {player_nickname}'
+				game_string += f'\n\nОсталось перебросов кубиков: {db["games"][game_name]["reroll_counts"]}'
+				game_string += f'\n\nВыпавшие кубики: {db["games"][game_name]["dices"]["dice_a"]}, {db["games"][game_name]["dices"]["dice_b"]}, {db["games"][game_name]["dices"]["dice_c"]}, {db["games"][game_name]["dices"]["dice_d"]}, {db["games"][game_name]["dices"]["dice_e"]}'
+				game_string += '\nЗамороженные кубики: '
+				game_string += 'нет' if len(db['games'][game_name]['hold']) == 0 else ''
+				game_string += f'1-й ' if db["games"][game_name]["dices"]["dice_a"] in db['games'][game_name]['hold'] else ""
+				game_string += f'2-й ' if db["games"][game_name]["dices"]["dice_b"] in db['games'][game_name]['hold'] else ""
+				game_string += f'3-й ' if db["games"][game_name]["dices"]["dice_c"] in db['games'][game_name]['hold'] else ""
+				game_string += f'4-й ' if db["games"][game_name]["dices"]["dice_d"] in db['games'][game_name]['hold'] else ""
+				game_string += f'5-й ' if db["games"][game_name]["dices"]["dice_e"] in db['games'][game_name]['hold'] else ""
+				game_string += '\n\nВыбери ход кнопками клавиатуры бота!'
+
+				msg = bot.send_message(player_id,
+					game_string,
+					reply_markup=gen_move_player_markup(db['games'][game_name]['stats'][player_id]))
+
+				bot.register_next_step_handler(msg, proceed_move, game_name, player_id, player_nickname, [db["games"][game_name]["dices"]["dice_a"], db["games"][game_name]["dices"]["dice_b"], db["games"][game_name]["dices"]["dice_c"], db["games"][game_name]["dices"]["dice_d"], db["games"][game_name]["dices"]["dice_e"]])
+
+				while not db['games'][game_name]['finished_move']:
+					pass
+
+				db_save()
 
 def proceed_move(message, game_name, player_id, player_nickname, dices):
+	make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname}, команда {message.text}', 'game')
+
 	if message.text == '❌ Выход из игры (поражение)':
 		msg = bot.send_message(player_id,
 			'Вы уверены, что хотите покинуть игру? Вам будет автоматически засчитано поражение, очки за эту игру не будут добавлены в статистику!',
@@ -154,6 +187,8 @@ def proceed_move(message, game_name, player_id, player_nickname, dices):
 
 		if db['users'][player_id]['stats']['games'] > 0:
 			db['users'][player_id]['stats']['win_rate'] = int(db['users'][player_id]['stats']['games_won'] / db['users'][player_id]['stats']['games'] * 100)
+
+		make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} покинул игру, засчитано поражение', 'game')
 
 		bot.send_message(message.from_user.id, 
 			f'Поражение! Счёт: 0', 
@@ -182,6 +217,9 @@ def proceed_move(message, game_name, player_id, player_nickname, dices):
 				bot.send_message(player_id,
 					f'Ход завершен, получено {db["games"][game_name]["stats"][player_id]["sum_of_1"]} очков. Ждите следующего раунда!',
 					reply_markup=ReplyKeyboardRemove())
+
+			make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} получил {db["games"][game_name]["stats"][player_id]["sum_of_1"]} очков за ход Сумма единиц', 'game')
+
 		else:
 			msg = bot.send_message(player_id,
 				'Этот ход уже использовался!')
@@ -204,6 +242,9 @@ def proceed_move(message, game_name, player_id, player_nickname, dices):
 				bot.send_message(player_id,
 					f'Ход завершен, получено {db["games"][game_name]["stats"][player_id]["sum_of_2"]} очков. Ждите следующего раунда!',
 					reply_markup=ReplyKeyboardRemove())
+			
+			make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} получил {db["games"][game_name]["stats"][player_id]["sum_of_2"]} очков за ход Сумма двоек', 'game')
+
 		else:
 			msg = bot.send_message(player_id,
 				'Этот ход уже использовался!')
@@ -226,6 +267,9 @@ def proceed_move(message, game_name, player_id, player_nickname, dices):
 				bot.send_message(player_id,
 					f'Ход завершен, получено {db["games"][game_name]["stats"][player_id]["sum_of_3"]} очков. Ждите следующего раунда!',
 					reply_markup=ReplyKeyboardRemove())
+
+			make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} получил {db["games"][game_name]["stats"][player_id]["sum_of_3"]} очков за ход Сумма троек', 'game')
+
 		else:
 			msg = bot.send_message(player_id,
 				'Этот ход уже использовался!')
@@ -248,6 +292,9 @@ def proceed_move(message, game_name, player_id, player_nickname, dices):
 				bot.send_message(player_id,
 					f'Ход завершен, получено {db["games"][game_name]["stats"][player_id]["sum_of_4"]} очков. Ждите следующего раунда!',
 					reply_markup=ReplyKeyboardRemove())
+
+			make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} получил {db["games"][game_name]["stats"][player_id]["sum_of_4"]} очков за ход Сумма четвёрок', 'game')
+
 		else:
 			msg = bot.send_message(player_id,
 				'Этот ход уже использовался!')
@@ -270,6 +317,9 @@ def proceed_move(message, game_name, player_id, player_nickname, dices):
 				bot.send_message(player_id,
 					f'Ход завершен, получено {db["games"][game_name]["stats"][player_id]["sum_of_5"]} очков. Ждите следующего раунда!',
 					reply_markup=ReplyKeyboardRemove())
+
+			make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} получил {db["games"][game_name]["stats"][player_id]["sum_of_5"]} очков за ход Сумма пятёрок', 'game')
+
 		else:
 			msg = bot.send_message(player_id,
 				'Этот ход уже использовался!')
@@ -292,6 +342,9 @@ def proceed_move(message, game_name, player_id, player_nickname, dices):
 				bot.send_message(player_id,
 					f'Ход завершен, получено {db["games"][game_name]["stats"][player_id]["sum_of_6"]} очков. Ждите следующего раунда!',
 					reply_markup=ReplyKeyboardRemove())
+
+			make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} получил {db["games"][game_name]["stats"][player_id]["sum_of_6"]} очков за ход Сумма шестёрок', 'game')
+
 		else:
 			msg = bot.send_message(player_id,
 				'Этот ход уже использовался!')
@@ -317,6 +370,9 @@ def proceed_move(message, game_name, player_id, player_nickname, dices):
 				bot.send_message(player_id,
 					f'Ход завершен, получено {db["games"][game_name]["stats"][player_id]["three_of_a_kind"]} очков. Ждите следующего раунда!',
 					reply_markup=ReplyKeyboardRemove())
+
+			make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} получил {db["games"][game_name]["stats"][player_id]["three_of_a_kind"]} очков за ход Три одинаковых', 'game')
+
 		else:
 			msg = bot.send_message(player_id,
 				'Этот ход уже использовался!')
@@ -342,6 +398,9 @@ def proceed_move(message, game_name, player_id, player_nickname, dices):
 				bot.send_message(player_id,
 					f'Ход завершен, получено {db["games"][game_name]["stats"][player_id]["four_of_a_kind"]} очков. Ждите следующего раунда!',
 					reply_markup=ReplyKeyboardRemove())
+
+			make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} получил {db["games"][game_name]["stats"][player_id]["four_of_a_kind"]} очков за ход Четыре', 'game')
+
 		else:
 			msg = bot.send_message(player_id,
 				'Этот ход уже использовался!')
@@ -366,6 +425,9 @@ def proceed_move(message, game_name, player_id, player_nickname, dices):
 				bot.send_message(player_id,
 					f'Ход завершен, получено {db["games"][game_name]["stats"][player_id]["short_straigth"]} очков. Ждите следующего раунда!',
 					reply_markup=ReplyKeyboardRemove())
+
+			make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} получил {db["games"][game_name]["stats"][player_id]["short_straigth"]} очков за ход Короткий стрит', 'game')
+
 		else:
 			msg = bot.send_message(player_id,
 				'Этот ход уже использовался!')
@@ -390,6 +452,8 @@ def proceed_move(message, game_name, player_id, player_nickname, dices):
 				bot.send_message(player_id,
 					f'Ход завершен, получено {db["games"][game_name]["stats"][player_id]["long_straigth"]} очков. Ждите следующего раунда!',
 					reply_markup=ReplyKeyboardRemove())
+
+			make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} получил {db["games"][game_name]["stats"][player_id]["long_straigth"]} очков за ход Длинный стрит', 'game')
 		else:
 			msg = bot.send_message(player_id,
 				'Этот ход уже использовался!')
@@ -414,6 +478,9 @@ def proceed_move(message, game_name, player_id, player_nickname, dices):
 				bot.send_message(player_id,
 					f'Ход завершен, получено {db["games"][game_name]["stats"][player_id]["full_house"]} очков. Ждите следующего раунда!',
 					reply_markup=ReplyKeyboardRemove())
+
+			make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} получил {db["games"][game_name]["stats"][player_id]["full_house"]} очков за ход Фулл хаус', 'game')
+
 		else:
 			msg = bot.send_message(player_id,
 				'Этот ход уже использовался!')
@@ -439,6 +506,9 @@ def proceed_move(message, game_name, player_id, player_nickname, dices):
 				bot.send_message(player_id,
 					f'Ход завершен, получено {db["games"][game_name]["stats"][player_id]["five_of_a_kind"]} очков. Ждите следующего раунда!',
 					reply_markup=ReplyKeyboardRemove())
+
+			make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} получил {db["games"][game_name]["stats"][player_id]["five_of_a_kind"]} очков за ход Пять одинаковых', 'game')
+
 		else:
 			msg = bot.send_message(player_id,
 				'Этот ход уже использовался!')
@@ -461,6 +531,8 @@ def proceed_move(message, game_name, player_id, player_nickname, dices):
 				bot.send_message(player_id,
 					f'Ход завершен, получено {db["games"][game_name]["stats"][player_id]["chance_point"]} очков. Ждите следующего раунда!',
 					reply_markup=ReplyKeyboardRemove())
+
+			make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} получил {db["games"][game_name]["stats"][player_id]["chance_point"]} очков за ход Сумма всех кубиков', 'game')
 
 		else:
 			msg = bot.send_message(player_id,
@@ -488,6 +560,8 @@ def proceed_move(message, game_name, player_id, player_nickname, dices):
 			game_string += f'4-й ' if db["games"][game_name]["dices"]["dice_d"] in db['games'][game_name]['hold'] else ""
 			game_string += f'5-й ' if db["games"][game_name]["dices"]["dice_e"] in db['games'][game_name]['hold'] else ""
 			game_string += '\n\nВыбери ход кнопками клавиатуры бота!'
+
+			make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} перебрасывает кубики', 'game')
 
 			msg = bot.send_message(player_id,
 				game_string,
@@ -517,12 +591,16 @@ def proceed_dice(message, game_name, player_id, player_nickname):
 			if 'dice_a' not in db['games'][game_name]['hold']:
 				db['games'][game_name]['hold'].append('dice_a')
 
+				make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} заморозил первый кубик', 'game')
+
 				msg = bot.send_message(player_id,
 					'Первый кубик заморожен!')
 		
 				bot.register_next_step_handler(msg, proceed_dice, game_name, player_id, player_nickname)
 			else:
 				db['games'][game_name]['hold'].remove('dice_a')
+
+				make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} разморозил второй кубик', 'game')
 
 				msg = bot.send_message(player_id,
 					'Первый кубик разморожен!')
@@ -533,12 +611,16 @@ def proceed_dice(message, game_name, player_id, player_nickname):
 			if 'dice_b' not in db['games'][game_name]['hold']:
 				db['games'][game_name]['hold'].append('dice_b')
 
+				make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} заморозил второй кубик', 'game')
+
 				msg = bot.send_message(player_id,
 					'Второй кубик заморожен!')
 		
 				bot.register_next_step_handler(msg, proceed_dice, game_name, player_id, player_nickname)
 			else:
 				db['games'][game_name]['hold'].remove('dice_b')
+
+				make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} разморозил второй кубик', 'game')
 
 				msg = bot.send_message(player_id,
 					'Второй кубик разморожен!')
@@ -549,12 +631,16 @@ def proceed_dice(message, game_name, player_id, player_nickname):
 			if 'dice_c' not in db['games'][game_name]['hold']:
 				db['games'][game_name]['hold'].append('dice_c')
 
+				make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} заморозил третий кубик', 'game')
+
 				msg = bot.send_message(player_id,
 					'Третий кубик заморожен!')
 		
 				bot.register_next_step_handler(msg, proceed_dice, game_name, player_id, player_nickname)
 			else:
 				db['games'][game_name]['hold'].remove('dice_c')
+
+				make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} разморозил третий кубик', 'game')
 
 				msg = bot.send_message(player_id,
 					'Третий кубик разморожен!')
@@ -565,12 +651,16 @@ def proceed_dice(message, game_name, player_id, player_nickname):
 			if 'dice_d' not in db['games'][game_name]['hold']:
 				db['games'][game_name]['hold'].append('dice_d')
 
+				make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} заморозил четвёртый кубик', 'game')
+
 				msg = bot.send_message(player_id,
 					'Четвертый кубик заморожен!')
 		
 				bot.register_next_step_handler(msg, proceed_dice, game_name, player_id, player_nickname)
 			else:
 				db['games'][game_name]['hold'].remove('dice_d')
+
+				make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} разморозил четвёртый кубик', 'game')
 
 				msg = bot.send_message(player_id,
 					'Четвертый кубик разморожен!')
@@ -581,12 +671,16 @@ def proceed_dice(message, game_name, player_id, player_nickname):
 			if 'dice_e' not in db['games'][game_name]['hold']:
 				db['games'][game_name]['hold'].append('dice_e')
 
+				make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} заморозил пятый кубик', 'game')
+
 				msg = bot.send_message(player_id,
 					'Пятый кубик заморожен!')
 		
 				bot.register_next_step_handler(msg, proceed_dice, game_name, player_id, player_nickname)
 			else:
 				db['games'][game_name]['hold'].remove('dice_e')
+
+				make_log(f'Игра {game_name}, игрок {player_id} - {player_nickname} разморозил пятый кубик', 'game')
 
 				msg = bot.send_message(player_id,
 					'Пятый кубик разморожен!')
@@ -620,6 +714,7 @@ def proceed_dice(message, game_name, player_id, player_nickname):
 		bot.register_next_step_handler(msg, proceed_move, game_name, player_id, player_nickname, [db["games"][game_name]["dices"]["dice_a"], db["games"][game_name]["dices"]["dice_b"], db["games"][game_name]["dices"]["dice_c"], db["games"][game_name]["dices"]["dice_d"], db["games"][game_name]["dices"]["dice_e"]])
 
 def finish_game(game_name):
+	log_string = f'Игра {game_name} завершилась! '
 	scores = {}
 
 	for player_id, player_nickname in db['games'][game_name]['players'].items():
@@ -651,11 +746,14 @@ def finish_game(game_name):
 
 	winner_id, winner_nickname = list(scores.keys())[0], scores[list(scores.keys())[0]]['nickname']
 
+	log_string += f'Победитель: {winner_id} - {winner_nickname}\nСтатистика игры:'
+
 	final_string = f'Игра окончена! Победитель: 🎉{winner_nickname}🎉'
 	final_string += '\n\nИтоги игры:'
 
 	for player_id, score in scores.items():
 		final_string += f'\n{list(scores.keys()).index(player_id) + 1}. {scores[player_id]["nickname"]} - {scores[player_id]["score"]}'
+		log_string += f'\n{list(scores.keys()).index(player_id) + 1}. {scores[player_id]["nickname"]} - {scores[player_id]["score"]}'
 
 	for player_id, player_nickname in db['games'][game_name]['players'].items():
 		db['users'][player_id]['active_game'] = False
@@ -678,6 +776,8 @@ def finish_game(game_name):
 	del winner_id
 	del winner_nickname
 	del final_string
+
+	make_log(log_string, 'game')
 
 	db_save()
 
@@ -743,6 +843,14 @@ def gen_lobby_owner_markup():
 	markup = ReplyKeyboardMarkup(resize_keyboard=True)
 
 	markup.add('✅ Начать игру', '❌ Удалить комнату')
+	markup.add('➕ Пригласить игрока')
+
+	return markup
+
+def gen_invited_player_markup(game_name):
+	markup = ReplyKeyboardMarkup(resize_keyboard=True)
+
+	markup.add(f'✅ Присоединиться к игре \'{game_name}\'', '❌ Отказаться от приглашения')
 
 	return markup
 
@@ -754,6 +862,9 @@ def gen_games_list_markup():
 	for game in available_games:
 		if db['games'][game]['game_started']:
 			available_games.remove(game)
+
+	if len(available_games) == 0:
+		return False
 
 	for l in [available_games[k:k + 3] for k in range(0, len(available_games), 3)]:
 		if len(l) == 3:
@@ -815,24 +926,12 @@ def gen_dice_control_markup():
 
 	return markup
 
-@bot.message_handler(func=lambda message: message.text == '🔙 Назад в меню')
-@bot.message_handler(commands=['start'])
-def init_bot(message):
-	if message.from_user.id not in db['users'].keys():
-		msg = bot.send_message(message.from_user.id, 
-			'Шалом! Введи свой ник. Он должен быть уникальным и длиной от 3 до 15 символов')
-
-		bot.register_next_step_handler(msg, register_user)
-
-	else:
-		bot.send_message(message.from_user.id, 
-			f'И снова шалом, {db["users"][message.from_user.id]["nickname"]}!', 
-			reply_markup=gen_menu_markup())
-
 @bot.message_handler(func=lambda message: message.text == '!выкл')
 @bot.message_handler(commands=['disable_bot'])
 def disable_bot(message):
 	if message.from_user.id in db['settings']['admins']:
+		make_log(f'Администратор {message.from_user.id} - {message.from_user.username} инициировал завершение работы бота', 'info')
+
 		db['settings']['players_can_create_rooms'] = False
 
 		bot.send_message(message.from_user.id, 
@@ -848,7 +947,27 @@ def disable_bot(message):
 
 		db_save()
 
+		make_log('Завершение работы бота...', 'info')
+
 		exit('Бот отключён!')
+
+@bot.message_handler(func=lambda message: message.text == '🔙 Назад в меню')
+@bot.message_handler(commands=['start'])
+def init_bot(message):
+	if message.from_user.id not in db['users'].keys():
+		make_log(f'Пользователь {message.from_user.id} - {message.from_user.username} впервые воспользовался ботом', 'info')
+
+		msg = bot.send_message(message.from_user.id, 
+			'Шалом! Введи свой ник. Он должен быть уникальным и длиной от 3 до 15 символов')
+
+		bot.register_next_step_handler(msg, register_user)
+
+	else:
+		make_log(f'Пользователь {message.from_user.id} - {message.from_user.username} вызвал главное меню командой {message.text}', 'info')
+
+		bot.send_message(message.from_user.id, 
+			f'И снова шалом, {db["users"][message.from_user.id]["nickname"]}!', 
+			reply_markup=gen_menu_markup())
 
 def register_user(message):
 	if len(message.text) > 15:
@@ -889,15 +1008,21 @@ def register_user(message):
 			f'Добро пожаловать, {db["users"][message.from_user.id]["nickname"]}!', 
 			reply_markup=gen_menu_markup())
 
+		make_log(f'Пользователь {message.from_user.id} - {message.from_user.username} зарегистрировался, указав в качестве ника \'{message.text}\'', 'info')
+
 @bot.message_handler(func=lambda message: message.text == '👨‍🦲 Профиль')
 def show_profile(message):
 	if message.from_user.id in db['users'].keys():
+		make_log(f'Пользователь {message.from_user.id} - {message.from_user.username} - {db["users"][message.from_user.id]["nickname"]} просмотрел информацию о своём профиле', 'info')
+
 		bot.send_message(message.from_user.id, 
 			get_profile_data(message.from_user.id))
 
 @bot.message_handler(func=lambda message: message.text == '🆕 Создать игру')
 def request_new_game_name(message):
 	if message.from_user.id in db['users'].keys():
+		make_log(f'Пользователь {message.from_user.id} - {message.from_user.username} - {db["users"][message.from_user.id]["nickname"]} решил создать игру', 'info')
+
 		if not db['settings']['players_can_create_rooms']:
 			bot.send_message(message.from_user.id, 
 				'Бот готовится к отключению в связи с тех. обслуживанием. Создание новых комнат недоступно, бот будет отключен по завершению всех активных игр. Простите и возвращайтесь позже :(')
@@ -916,6 +1041,8 @@ def request_new_game_name(message):
 
 def request_new_game_code(message):
 	if message.text == '🔙 Назад в меню':
+		make_log(f'Пользователь {message.from_user.id} - {message.from_user.username} - {db["users"][message.from_user.id]["nickname"]} прервал создание игры', 'info')
+
 		bot.send_message(message.from_user.id, 
 			f'И снова шалом, {db["users"][message.from_user.id]["nickname"]}!', 
 			reply_markup=gen_menu_markup())
@@ -950,6 +1077,8 @@ def request_new_game_code(message):
 
 def create_game(message, game_name):
 	if message.text == '🔙 Назад в меню':
+		make_log(f'Пользователь {message.from_user.id} - {message.from_user.username} - {db["users"][message.from_user.id]["nickname"]} прервал создание игры', 'info')
+
 		bot.send_message(message.from_user.id, 
 			f'И снова шалом, {db["users"][message.from_user.id]["nickname"]}!', 
 			reply_markup=gen_menu_markup())
@@ -983,6 +1112,8 @@ def create_game(message, game_name):
 					reply_markup=gen_lobby_owner_markup()
 				)
 
+			make_log(f'Пользователь {message.from_user.id} - {message.from_user.username} - {db["users"][message.from_user.id]["nickname"]} создал игру {game_name} с паролем \'{message.text}\'', 'info')
+
 			db_save()
 
 		except ValueError:
@@ -995,14 +1126,23 @@ def create_game(message, game_name):
 @bot.message_handler(func=lambda message: message.text == '➕ Присоединиться к игре')
 def request_game_name(message):
 	if message.from_user.id in db['users'].keys():
-		if db['users'][message.from_user.id]['active_game']:
+		make_log(f'Пользователь {message.from_user.id} - {message.from_user.username} - {db["users"][message.from_user.id]["nickname"]} решил присоединиться к игре', 'info')
+
+		lobby_markup = gen_games_list_markup()
+
+		if not lobby_markup:
 			bot.send_message(message.from_user.id, 
-				'Активная игра уже есть!')
+				'Список комнат пуст!')
 
 		else:
-			bot.send_message(message.from_user.id, 
-				'Выбери комнату из списка при помощи клавиатуры бота', 
-				reply_markup=gen_games_list_markup())
+			if db['users'][message.from_user.id]['active_game']:
+				bot.send_message(message.from_user.id, 
+					'Активная игра уже есть!')
+
+			else:
+				bot.send_message(message.from_user.id, 
+					'Выбери комнату из списка при помощи клавиатуры бота', 
+					reply_markup=lobby_markup)
 
 @bot.message_handler(func=lambda message: message.text in get_list_of_rooms())
 def request_game_password(message):
@@ -1030,6 +1170,8 @@ def request_game_password(message):
 
 def join_game(message, game_name):
 	if message.text == '🔙 Назад в меню':
+		make_log(f'Пользователь {message.from_user.id} - {message.from_user.username} - {db["users"][message.from_user.id]["nickname"]} прервал присоединение к игре {game_name}', 'info')
+
 		bot.send_message(message.from_user.id, 
 			f'И снова шалом, {db["users"][message.from_user.id]["nickname"]}!', 
 			reply_markup=gen_menu_markup())
@@ -1065,6 +1207,8 @@ def join_game(message, game_name):
 							db['users'][db['games'][game_name]['owner']]['nickname']),
 							reply_markup=gen_lobby_owner_markup() if db['games'][game_name]['owner'] == player_id else gen_lobby_player_markup())
 
+				make_log(f'Пользователь {message.from_user.id} - {message.from_user.username} - {db["users"][message.from_user.id]["nickname"]} успешно присоединился к игре {game_name}', 'info')
+
 				db_save()
 
 		except ValueError:
@@ -1074,11 +1218,112 @@ def join_game(message, game_name):
 
 			bot.register_next_step_handler(msg, join_game, game_name)
 
+@bot.message_handler(func=lambda message: message.text == '➕ Пригласить игрока')
+def request_player_nickname(message):
+	if message.from_user.id in db['users'].keys():
+		if not db['users'][message.from_user.id]['in_room']:
+			pass
+		else:
+			if message.from_user.id != db['games'][db['users'][message.from_user.id]['in_room']]['owner']:
+				bot.send_message(message.from_user.id, 
+					'Ты не владелец комнаты!')
+
+			else:
+				msg = bot.send_message(message.from_user.id, 
+					'Введи никнейм игрока, которого хочешь пригласить!', 
+					reply_markup=gen_return_markup())
+
+				bot.register_next_step_handler(msg, invite_player)
+
+def invite_player(message):
+	if message.text == '🔙 Назад в меню':
+		bot.send_message(message.from_user.id, 
+			get_lobby_data(db['users'][message.from_user.id]['in_room'],
+				db['games'][db['users'][message.from_user.id]['in_room']]['password'],
+				[db['users'][message.from_user.id]['nickname']],
+				db['users'][message.from_user.id]['nickname']),
+				reply_markup=gen_lobby_owner_markup()
+			)
+
+	elif message.text not in get_list_of_nicknames():
+		msg = bot.send_message(message.from_user.id, 
+			'Игрока с таким никнеймом не существует!\n\nВведи никнейм игрока, которого хочешь пригласить!', 
+			reply_markup=gen_return_markup())
+
+		bot.register_next_step_handler(msg, invite_player)
+	else:
+		for player_id in db['users'].keys():
+			if db['users']['player_id']['nickname'] == message.text:
+				if db['users'][player_id]['in_room']:
+					msg = bot.send_message(message.from_user.id, 
+						'Игрок с таким никнеймом сейчас в другой комнате!\n\nВведи никнейм игрока, которого хочешь пригласить!', 
+						reply_markup=gen_return_markup())
+
+					bot.register_next_step_handler(msg, invite_player)
+				else:
+					bot.send_message(player_id,
+						f'Игрок {db["users"][message.from_user.id]["nickname"]} приглашает тебя в игру {db["users"][message.from_user.id]["in_room"]}!',
+						reply_markup=gen_invited_player_markup(db['users'][message.from_user.id]['in_room']))
+
+					msg = bot.send_message(message.from_user.id,
+						f'Игрок {message.text} получил приглашение в игру!\n\nВведи никнейм игрока, которого хочешь пригласить!')
+
+					make_log(f'Пользователь {message.from_user.id} - {message.from_user.username} - {db["users"][message.from_user.id]["nickname"]} пригласил игрока {player_id} - {message.text} в игру {db["users"][message.from_user.id]["in_room"]}', 'info')
+
+					bot.register_next_step_handler(msg, invite_player)
+
+@bot.message_handler(func=lambda message: message.text.startswith('✅ Присоединиться к игре \''))
+def accept_invitation(message):
+	if message.from_user.id in db['users'].keys():
+		if not db['users'][message.from_user.id]['in_room']:
+			pass
+
+		else:
+			game_name = message.text.split('\'')[1]
+
+			if game_name not in db['games'].keys():
+				bot.send_message(message.from_user.id,
+					'Комнаты с таким названием не найдено!',
+					reply_markup=gen_menu_markup())
+
+			else:
+				for old_player_id in db['games'][game_name]['players'].keys():
+					bot.send_message(old_player_id, 
+						f'Игрок {db["users"][message.from_user.id]["nickname"]} присоединился к лобби!')
+
+				db['games'][game_name]['players'][message.from_user.id] = db['users'][message.from_user.id]['nickname']
+				db['users'][message.from_user.id]['active_game'] = True
+				db['users'][message.from_user.id]['in_room'] = game_name
+
+				for player_id, player_nickname in db['games'][game_name]['players'].items():
+					bot.send_message(player_id, 
+						get_lobby_data(game_name, 
+							db['games'][db['users'][message.from_user.id]['in_room']]['password'],
+							db['games'][game_name]['players'].values(),
+							db['users'][db['games'][game_name]['owner']]['nickname']),
+							reply_markup=gen_lobby_owner_markup() if db['games'][game_name]['owner'] == player_id else gen_lobby_player_markup())
+
+				make_log(f'Пользователь {message.from_user.id} - {message.from_user.username} - {db["users"][message.from_user.id]["nickname"]} успешно присоединился к игре {game_name} по приглащению создателя игры', 'info')
+
+				db_save()
+
+@bot.message_handler(func=lambda message: message.text == '❌ Отказаться от приглашения')
+def decline_invitation(message):
+	if message.from_user.id in db['users'].keys():
+		if not db['users'][message.from_user.id]['in_room']:
+			pass
+
+		else:
+			bot.send_message(message.from_user.id,
+				'Приглашение отклонено!',
+				reply_markup=gen_menu_markup())
+
 @bot.message_handler(func=lambda message: message.text == '❌ Покинуть комнату')
 def request_game_name(message):
 	if message.from_user.id in db['users'].keys():
 		if not db['users'][message.from_user.id]['in_room']:
 			pass
+
 		else:
 			game_name = db['users'][message.from_user.id]['in_room']
 
@@ -1102,6 +1347,8 @@ def request_game_name(message):
 						db['users'][db['games'][game_name]['owner']]['nickname']),
 						reply_markup=gen_lobby_owner_markup() if db['games'][game_name]['owner'] == player_id else gen_lobby_player_markup())
 
+			make_log(f'Пользователь {message.from_user.id} - {message.from_user.username} - {db["users"][message.from_user.id]["nickname"]} покинул игру {game_name}', 'info')
+
 			db_save()
 
 @bot.message_handler(func=lambda message: message.text == '✅ Начать игру')
@@ -1118,18 +1365,25 @@ def request_game_name(message):
 		else:
 			game_name = db['users'][message.from_user.id]['in_room']
 
-			for player_id in db['games'][game_name]['players'].keys():
-				bot.send_message(player_id, 
-					f'Игра начинается!\n\nОжидайте своего хода...',
-					reply_markup=ReplyKeyboardRemove())
+			if len(list(db['games'][game_name]['players'])) < 2:
+				bot.send_message(message.from_user.id, 
+					'Ты единственный игрок в комнате, запуск игры невозможен!')
 
-			db['games'][game_name]['game_started'] = True
+			else:
+				for player_id in db['games'][game_name]['players'].keys():
+					bot.send_message(player_id, 
+						f'Игра начинается!\n\nОжидайте своего хода...',
+						reply_markup=ReplyKeyboardRemove())
 
-			db_save()
+				db['games'][game_name]['game_started'] = True
 
-			start_game(game_name)
+				db_save()
 
-			finish_game(game_name)
+				make_log(f'Пользователь {message.from_user.id} - {message.from_user.username} - {db["users"][message.from_user.id]["nickname"]} запустил игру {game_name}', 'info')
+
+				start_game(game_name)
+
+				finish_game(game_name)
 
 @bot.message_handler(func=lambda message: message.text == '❌ Удалить комнату')
 def request_game_name(message):
@@ -1154,6 +1408,8 @@ def request_game_name(message):
 				db['users'][player_id]['in_room'] = None
 
 			del db['games'][game_name]
+
+			make_log(f'Пользователь {message.from_user.id} - {message.from_user.username} - {db["users"][message.from_user.id]["nickname"]} удалил игру {game_name}', 'info')
 
 			db_save()
 
